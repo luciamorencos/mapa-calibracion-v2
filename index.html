@@ -1,0 +1,372 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mapa Calibración Interdental – V45 Clínico</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{margin:0;font-family:Arial;background:#f0f0f0;}
+#header{position:sticky;top:0;background:#fff;padding:10px;border-bottom:2px solid #ddd;text-align:center;z-index:10;}
+#header input{padding:6px 8px;font-size:14px;width:140px;border:1px solid #999;border-radius:4px;}
+
+#mainWrapper{width:700px;margin:20px auto;position:relative;}
+#bg{width:700px;display:block;}
+canvas{position:absolute;top:0;left:0;}
+
+#toolbar{
+ position:absolute;
+ top:50%;
+ left:50%;
+ transform:translate(-50%,-50%);
+ background:white;
+ padding:8px 10px;
+ border:1px solid #aaa;
+ border-radius:8px;
+ box-shadow:0 4px 10px rgba(0,0,0,.2);
+ cursor:move;
+ z-index:20;
+}
+
+button{
+ margin:2px;
+ padding:4px 7px;
+ border:1px solid #555;
+ font-size:12px;
+ font-weight:bold;
+ border-radius:5px;
+ cursor:pointer;
+}
+
+.color-btn{color:white;}
+</style>
+</head>
+
+<body>
+
+<div id="header">
+<strong>ID paciente:</strong>
+<input type="number" id="patientId" placeholder="Ej. 12345">
+</div>
+
+<div id="mainWrapper">
+
+<div id="toolbar">
+<b>PRIME</b><br>
+<button class="color-btn" style="background:#009FE3" onclick="selectColor('#009FE3','prime')">06</button>
+<button class="color-btn" style="background:#E30613" onclick="selectColor('#E30613','prime')">07</button>
+<button class="color-btn" style="background:#E6007E" onclick="selectColor('#E6007E','prime')">08</button>
+<button class="color-btn" style="background:#FFD500;color:#000" onclick="selectColor('#FFD500','prime')">09</button>
+<button class="color-btn" style="background:#7CB518" onclick="selectColor('#7CB518','prime')">011</button>
+
+<br><br>
+
+<b>PERIO</b><br>
+<button class="color-btn" style="background:#E30613" onclick="selectColor('#E30613','perio')">405</button>
+<button class="color-btn" style="background:#E83E8C" onclick="selectColor('#E83E8C','perio')">406</button>
+<button class="color-btn" style="background:#6F42C1" onclick="selectColor('#6F42C1','perio')">408</button>
+<button class="color-btn" style="background:#0B3C5D" onclick="selectColor('#0B3C5D','perio')">410</button>
+
+<br><br>
+
+<button onclick="setMode('x')">X</button>
+<button onclick="setMode('free')">✏</button>
+<button onclick="setMode('line')">┃</button>
+<button onclick="setMode('erase')">🧽</button>
+<button onclick="undo()">↩</button>
+<button onclick="saveImage()">💾</button>
+</div>
+
+<img id="bg" src="mapa_bg.png">
+<canvas id="canvas"></canvas>
+
+</div>
+
+<script>
+
+const canvas=document.getElementById("canvas")
+const ctx=canvas.getContext("2d")
+const bg=document.getElementById("bg")
+const toolbar=document.getElementById("toolbar")
+
+let arrows=[]
+let lines=[]
+let xs=[]
+let frees=[]
+let history=[]
+
+let currentColor="#009FE3"
+let currentType="prime"
+let mode="arrow"
+
+let start=null
+let drawing=false
+
+bg.onload=()=>{
+ canvas.width=bg.width
+ canvas.height=bg.height
+ saveState()
+ drawAll()
+}
+
+function setMode(m){mode=m}
+
+function selectColor(c,t){
+ currentColor=c
+ currentType=t
+ mode="arrow"
+}
+
+function saveState(){
+ history.push(JSON.stringify({arrows,lines,xs,frees}))
+}
+
+function undo(){
+ if(history.length>1){
+  history.pop()
+  const s=JSON.parse(history[history.length-1])
+  arrows=s.arrows
+  lines=s.lines
+  xs=s.xs
+  frees=s.frees
+  drawAll()
+ }
+}
+
+function getMousePos(e){
+ const rect=canvas.getBoundingClientRect()
+ return {x:e.clientX-rect.left,y:e.clientY-rect.top}
+}
+
+function drawAll(){
+
+ ctx.clearRect(0,0,canvas.width,canvas.height)
+
+ arrows.forEach(a=>{
+  const ang=Math.atan2(a.y2-a.y1,a.x2-a.x1)
+  const len=38
+  const head=10
+  const ex=a.x1+len*Math.cos(ang)
+  const ey=a.y1+len*Math.sin(ang)
+
+  ctx.strokeStyle=a.color
+  ctx.fillStyle=a.color
+  ctx.lineWidth=4
+
+  ctx.beginPath()
+  ctx.moveTo(a.x1,a.y1)
+  ctx.lineTo(ex,ey)
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(ex,ey)
+  ctx.lineTo(ex-head*Math.cos(ang-Math.PI/6), ey-head*Math.sin(ang-Math.PI/6))
+  ctx.lineTo(ex-head*Math.cos(ang+Math.PI/6), ey-head*Math.sin(ang+Math.PI/6))
+  ctx.closePath()
+  ctx.fill()
+
+  if(a.type==="perio"){
+   ctx.font="bold 11px Arial"
+   ctx.fillText("P",a.x1-12*Math.cos(ang),a.y1-12*Math.sin(ang))
+  }
+ })
+
+ lines.forEach(l=>{
+  ctx.strokeStyle="black"
+  ctx.lineWidth=3
+  ctx.beginPath()
+  ctx.moveTo(l.x1,l.y1)
+  ctx.lineTo(l.x2,l.y2)
+  ctx.stroke()
+ })
+
+ xs.forEach(x=>{
+  const s=9
+  ctx.strokeStyle="black"
+  ctx.beginPath()
+  ctx.moveTo(x.x-s,x.y-s)
+  ctx.lineTo(x.x+s,x.y+s)
+  ctx.moveTo(x.x+s,x.y-s)
+  ctx.lineTo(x.x-s,x.y+s)
+  ctx.stroke()
+ })
+
+ frees.forEach(path=>{
+  ctx.strokeStyle="black"
+  ctx.lineWidth=2
+  ctx.beginPath()
+  ctx.moveTo(path[0].x,path[0].y)
+  for(let i=1;i<path.length;i++){
+   ctx.lineTo(path[i].x,path[i].y)
+  }
+  ctx.stroke()
+ })
+
+}
+
+function distance(x1,y1,x2,y2){
+ return Math.hypot(x1-x2,y1-y2)
+}
+
+function findClosestElement(x,y){
+
+ let best={type:null,index:null,dist:30}
+
+ arrows.forEach((a,i)=>{
+  const d=distance(x,y,a.x1,a.y1)
+  if(d<best.dist){best={type:"arrow",index:i,dist:d}}
+ })
+
+ lines.forEach((l,i)=>{
+  const dx=l.x2-l.x1
+  const dy=l.y2-l.y1
+  const t=((x-l.x1)*dx+(y-l.y1)*dy)/(dx*dx+dy*dy)
+  if(t>=0 && t<=1){
+   const px=l.x1+t*dx
+   const py=l.y1+t*dy
+   const d=distance(x,y,px,py)
+   if(d<best.dist){best={type:"line",index:i,dist:d}}
+  }
+ })
+
+ xs.forEach((p,i)=>{
+  const d=distance(x,y,p.x,p.y)
+  if(d<best.dist){best={type:"x",index:i,dist:d}}
+ })
+
+ frees.forEach((path,i)=>{
+  path.forEach(p=>{
+   const d=distance(x,y,p.x,p.y)
+   if(d<best.dist){best={type:"free",index:i,dist:d}}
+  })
+ })
+
+ return best
+}
+
+canvas.addEventListener("mousedown",e=>{
+
+ const pos=getMousePos(e)
+
+ if(mode==="erase"){
+
+  const hit=findClosestElement(pos.x,pos.y)
+
+  if(hit.type==="arrow") arrows.splice(hit.index,1)
+  else if(hit.type==="line") lines.splice(hit.index,1)
+  else if(hit.type==="x") xs.splice(hit.index,1)
+  else if(hit.type==="free") frees.splice(hit.index,1)
+
+  saveState()
+  drawAll()
+  return
+ }
+
+ if(mode==="arrow"){
+  const hit=findClosestElement(pos.x,pos.y)
+  if(hit.type==="arrow"){
+   arrows[hit.index].color=currentColor
+   arrows[hit.index].type=currentType
+   saveState()
+   drawAll()
+   return
+  }
+  start=pos
+ }
+
+ else if(mode==="line"){
+  start=pos
+ }
+
+ else if(mode==="x"){
+  xs.push({x:pos.x,y:pos.y})
+  saveState()
+  drawAll()
+ }
+
+ else if(mode==="free"){
+  drawing=true
+  frees.push([{x:pos.x,y:pos.y}])
+ }
+
+})
+
+canvas.addEventListener("mousemove",e=>{
+ if(drawing && mode==="free"){
+  const pos=getMousePos(e)
+  frees[frees.length-1].push({x:pos.x,y:pos.y})
+  drawAll()
+ }
+})
+
+canvas.addEventListener("mouseup",e=>{
+
+ const pos=getMousePos(e)
+
+ if(mode==="arrow" && start){
+  arrows.push({x1:start.x,y1:start.y,x2:pos.x,y2:pos.y,color:currentColor,type:currentType})
+  saveState()
+ }
+
+ if(mode==="line" && start){
+  lines.push({x1:start.x,y1:start.y,x2:pos.x,y2:pos.y})
+  saveState()
+ }
+
+ if(mode==="free" && drawing){
+  drawing=false
+  saveState()
+ }
+
+ start=null
+ drawAll()
+
+})
+
+let drag=false,dx=0,dy=0
+
+toolbar.addEventListener("mousedown",e=>{
+ drag=true
+ dx=e.clientX-toolbar.offsetLeft
+ dy=e.clientY-toolbar.offsetTop
+ e.stopPropagation()
+})
+
+document.addEventListener("mousemove",e=>{
+ if(drag){
+  toolbar.style.left=(e.clientX-dx)+"px"
+  toolbar.style.top=(e.clientY-dy)+"px"
+  toolbar.style.transform="none"
+ }
+})
+
+document.addEventListener("mouseup",()=>drag=false)
+
+function saveImage(){
+
+ const temp=document.createElement("canvas")
+ temp.width=canvas.width
+ temp.height=canvas.height
+ const t=temp.getContext("2d")
+
+ t.drawImage(bg,0,0)
+ t.drawImage(canvas,0,0)
+
+ const pid=document.getElementById("patientId").value
+ if(pid){
+  t.font="bold 22px Arial"
+  t.fillStyle="#000"
+  t.fillText("ID: "+pid,15,30)
+ }
+
+ const url=temp.toDataURL("image/png")
+ const a=document.createElement("a")
+ a.href=url
+ a.download="calibracion_"+(pid||"paciente")+".png"
+ a.click()
+}
+
+</script>
+</body>
+</html>
